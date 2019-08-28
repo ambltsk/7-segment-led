@@ -25,41 +25,84 @@
 from Tkinter import *
 from functools import partial
 
+"""
+Цвета сегмента индикатор и фона
+"""
 ACTIVE_COLOR = "green2"
 DEACTIVE_COLOR = "dark green"
 BG_COLOR = "gray14"
 OUTLINE_COLOR = "green"
+"""
+Порядок следования сегментов при перевернутом индикаторе
+"""
+BLOCK_ROTATE = (3, 4, 5, 0, 1, 2, 6)
 
 def setbit(target, bit):
+    """
+    Устанавливает бит bit в 1 в байте target
+    """
     return target | (1 << bit)
 
 def unsetbit(target, bit):
+    """
+    Сбрасывает бит bit в 0 в байте target
+    """
     return target & ~ (1 << bit)
 
-def calckbit(active, anode, target, bit):
-    print active, ' ', anode, ' ', bit
+def calck_bit(active, anode, target, bit):
+    """
+    Определяет установить или сбросить бит bit
+    в байте target в зависимости от типа индикатора:
+    с общим анодом или с общим катодом
+    active - сегмент сетиться или нет
+    anode - общий аноде (1) или катод (0)
+    target - байт цель
+    bit - номер бита
+    """
     if anode == 1:
-        print '   anode 1'
         if active:
-            print '   unset bit'
             return unsetbit(target, bit)
         else:
-            print '   set bit'
             return setbit(target, bit)
     else:
-        print '   anode 0'
         if active:
-            print '   set bit'
             return setbit(target, bit)
         else:
-            print '   unset bit'
             return unsetbit(target, bit)
 
+def detect_bit(target, connect_type, anode, active, index):
+    """
+    Определяет какой бит надо изменить в байте target в зависимости
+    от типа подключения и типа индикатора
+    target - байт цель
+    connect_type - тип подключения
+    anode - общий аноде (1) или катод (0)
+    active - сегмент сетиться или нет
+    index - индекс сегмента индикатора (от 0 до 6 (от 'a' до 'g'))
+    возвращает байт с измененным битом
+    """
+    if connect_type == 0:
+        return calck_bit(active, anode, target, 7 - index)
+    elif connect_type == 1:
+        return calck_bit(active, anode, target, 1 + index)
+    elif connect_type == 2:
+        return calck_bit(active, anode, target, 6 - index)
+    elif connect_type == 3:
+        return calck_bit(active, anode, target, index)
+    return target
+
 class Segment():
+    """
+    Класс отрисовки сегмента индикатора на канве
+    """
     def __init__(self, canvas, index):
+        """
+        canvas - канва Tkinter
+        index - символьный индекс сегмента индикатора (от 'a' до 'g' и 'dp')
+        """
         self.canvas = canvas
         self.index = index
-        self.active = False
+        self.active = False #Светиться сегмент или нет, изначально выключен
         self.id = -1
         if index == "a":
             self.pnts = ((92,50),(112,32),(188,32),(208,50),(188,68),(112,68))
@@ -86,6 +129,9 @@ class Segment():
             self.id = self.canvas.create_polygon(self.pnts, fill=DEACTIVE_COLOR, outline=OUTLINE_COLOR, width=2) 
 
     def headup(self, point_down):
+        """
+        Переворачивает индикатор верх ногами
+        """
         if self.index != "dp":
             return
         if point_down:
@@ -97,6 +143,10 @@ class Segment():
         self.canvas.coords(self.id, self.x - 20, self.y - 20, self.x + 20, self.y + 20)
 
     def check_mouse(self, x, y):
+        """
+        Определяет нахождение координат x, y в области сегмента.
+        При попадании меняет цвет и статус active сегмента
+        """
         if self.index == "dp":
             if (y >= self.y - 20 and y <= self.y + 20) \
                 and (x >= self.x - 20 and x <= self.y + 20):
@@ -116,6 +166,9 @@ class Segment():
             self.canvas.itemconfig(self.id, fill = DEACTIVE_COLOR)
 
 class SevenSegWin:
+    """
+    Класс основного окна программы
+    """
     def __init__(self):
         self.tk = Tk()
         self.tk.title("Расчет значений 7 сегментного индикатора")
@@ -128,15 +181,18 @@ class SevenSegWin:
         
         self.conf_frame = Frame(self.tk)
         self.conf_frame.pack()
-        self.var_rotate = IntVar()
+        #в каком положении находится индикатор, нормальном (0) или вверх ногами (1)
+        self.var_rotate = IntVar() 
         self.btn_rotate = Checkbutton(self.conf_frame, text="Перевернуто", variable=self.var_rotate, \
                                     onvalue=1, offvalue=0, command=self.rotate);
         self.btn_rotate.pack(side="top")
+        #тип индикатора: с общим катодом (0) или анодом (1)
         self.var_anode = IntVar()
         self.var_anode.set(1)
         self.btn_anode = Checkbutton(self.conf_frame, text="Общий анод", variable=self.var_anode, \
                                     onvalue=1, offvalue=0, command=self.calck);
         self.btn_anode.pack(side="top")
+        #группа радиокнопок определяющих тип подключения индикаторов
         lbl = Label(self.conf_frame, text='Порядок подключения')
         lbl.pack(side="top")
         self.var_type = IntVar()
@@ -153,6 +209,7 @@ class SevenSegWin:
                                             value=3, command=self.calck)
         self.rbtn_type3.pack(side="top")
         self.var_type.set(0)
+        #вывод результата
         self.result2 = Label(self.conf_frame, text = '0b00000000', bg="yellow")
         self.result2.pack(side="top")
         self.btn_copy2 = Button(self.conf_frame, text = "копировать", command=self.copy2)
@@ -164,54 +221,80 @@ class SevenSegWin:
         self.calck()
 
     def create_segment(self):
+        """
+        Создание массива сегментов
+        """
         self.segments = [Segment(self.canva, "a"), Segment(self.canva, "b"),
                          Segment(self.canva, "c"), Segment(self.canva, "d"),
                          Segment(self.canva, "e"), Segment(self.canva, "f"),
                          Segment(self.canva, "g"), Segment(self.canva, "dp")]
 
     def rotate(self):
+        """
+        Разворачивает индикатор
+        """
         self.segments[len(self.segments) - 1].headup(self.var_rotate.get())
         self.calck()
 
+
     def calck(self):
+        """
+        Вычисление байта результата
+        """
         if self.var_anode.get() == 0:
             result = 0
         else:
             result = 0xFF
-        #TODO перевернутый индикатор
+        #вычисление битов (от 'a' до 'g') и их изменение
         for i in range(len(self.segments) - 1):
-            if self.var_type.get() == 0:
-                result = calckbit(self.segments[i].active, self.var_anode.get(), \
-                    result, 7 - i)
-            if self.var_type.get() == 1:
-                result = calckbit(self.segments[i].active, self.var_anode.get(), \
-                    result, i + 1)
-            if self.var_type.get() == 2:
-                result = calckbit(self.segments[i].active, self.var_anode.get(), \
-                    result, 6 - i)
-            if self.var_type.get() == 3:
-                result = calckbit(self.segments[i].active, self.var_anode.get(), \
-                    result, i)
-        #TODO установить бит точки
+            if self.var_rotate.get() == 0:
+                seg = self.segments[i]
+            else:
+                seg = self.segments[BLOCK_ROTATE[i]]
+            result = detect_bit(result, self.var_type.get(), self.var_anode.get(), seg.active, i)
+        #определение бита десятичной точки
+        if self.segments[len(self.segments)-1].active:
+            if self.var_type.get() < 2:
+                if self.var_anode.get() == 0:
+                    result = setbit(result, 0)
+                else:
+                    result = unsetbit(result, 0)
+            else:
+                if self.var_anode.get() == 0:
+                    result = setbit(result, 7)
+                else:
+                    result = unsetbit(result, 7)
+        #вывод результата
         self.result2["text"] = "%9s" % bin(result)
         self.result16["text"] = "0x%02X" % result
 
     def lbtn_click(self, event):
+        """
+        Отработка нажатие ЛКМ на канве
+        """
         for i in range(len(self.segments)):
             self.segments[i].check_mouse(event.x, event.y)
         self.calck()
 
     def mainloop(self):
+        """
+        Основной цикл окна программы
+        """
         self.tk.mainloop()
 
-    def close(self):
-        self.tk.destroy()
-
     def copy2(self):
+        """
+        Копирование в буфер обмена текстового значения
+        результата в двойчном формате
+        """
         self.tk.clipboard_clear()
         self.tk.clipboard_append(self.result2["text"])
 
     def copy16(self):
+        """
+        Копирование в буфер обмена текстового значения
+        результата в шестнадцатеричном формате
+        """
         self.tk.clipboard_clear()
         self.tk.clipboard_append(self.result16["text"])
         
